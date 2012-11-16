@@ -70,7 +70,7 @@ namespace Kudu.Core.Deployment
             // figure out with some heuristic, which one to deploy. 
 
             // TODO: Pick only 1 and throw if there's more than one
-            VsSolutionProject project = solution.Projects.Where(p => p.IsWap || p.IsWebSite).FirstOrDefault();
+            VsSolutionProject project = solution.Projects.FirstOrDefault(p => p.IsWap || p.IsWebSite);
 
             if (project == null)
             {
