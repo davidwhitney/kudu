@@ -154,6 +154,7 @@ namespace Kudu.Services.Web.App_Start
                                              .InRequestScope();
 
             kernel.Bind<IServerRepository>().ToMethod(context => new GitExeServer(environment.RepositoryPath,
+                                                                                  environment.SiteRootPath,
                                                                                   initLock,
                                                                                   context.Kernel.Get<IDeploymentEnvironment>(),
                                                                                   context.Kernel.Get<ITraceFactory>()))
@@ -165,13 +166,16 @@ namespace Kudu.Services.Web.App_Start
             kernel.Bind<ISSHKeyManager>().To<SSHKeyManager>()
                                              .InRequestScope();
 
-            kernel.Bind<IDeploymentRepository>().ToMethod(context => new GitDeploymentRepository(environment.RepositoryPath, context.Kernel.Get<ITraceFactory>()))
+            kernel.Bind<IDeploymentRepository>().ToMethod(context => new GitDeploymentRepository(environment.RepositoryPath,
+                                                                                                 environment.SiteRootPath, 
+                                                                                                 context.Kernel.Get<ITraceFactory>()))
                                                 .InRequestScope();
 
             // Git server
             kernel.Bind<IDeploymentEnvironment>().To<DeploymentEnvrionment>();
 
             kernel.Bind<IGitServer>().ToMethod(context => new GitExeServer(environment.RepositoryPath,
+                                                                           environment.SiteRootPath, 
                                                                            initLock,
                                                                            context.Kernel.Get<IDeploymentEnvironment>(),
                                                                            context.Kernel.Get<ITraceFactory>()))

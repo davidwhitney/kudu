@@ -59,7 +59,7 @@ namespace Kudu.Console
 
             var fs = new FileSystem();
             var buildPropertyProvider = new BuildPropertyProvider();
-            var serverRepository = new GitDeploymentRepository(env.RepositoryPath, traceFactory);
+            var serverRepository = new GitDeploymentRepository(env.RepositoryPath, env.SiteRootPath, traceFactory);
             var settings = new XmlSettings.Settings(GetSettingsPath(env));
             var settingsManager = new DeploymentSettingsManager(settings);
             var builderFactory = new SiteBuilderFactory(settingsManager, buildPropertyProvider, env);
