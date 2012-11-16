@@ -25,7 +25,12 @@ namespace Kudu.Services.Web.Tracing
                 }
 
                 // Setup the request for the tracer
-                var tracer = TraceServices.CreateRequesTracer(httpContext);
+                var tracer = TraceServices.CreateRequestTracer(httpContext);
+
+                if (tracer == null || tracer.TraceLevel <= TraceLevel.Off)
+                {
+                    return;
+                }
 
                 var attribs = new Dictionary<string, string>
                 {
@@ -56,7 +61,7 @@ namespace Kudu.Services.Web.Tracing
                     var httpContext = ((HttpApplication)sender).Context;
                     var tracer = TraceServices.GetRequestTracer(httpContext);
 
-                    if (tracer == null)
+                    if (tracer == null || tracer.TraceLevel <= TraceLevel.Off)
                     {
                         return;
                     }
@@ -74,7 +79,7 @@ namespace Kudu.Services.Web.Tracing
                 var httpContext = ((HttpApplication)sender).Context;
                 var tracer = TraceServices.GetRequestTracer(httpContext);
 
-                if (tracer == null)
+                if (tracer == null || tracer.TraceLevel <= TraceLevel.Off)
                 {
                     return;
                 }
@@ -82,6 +87,7 @@ namespace Kudu.Services.Web.Tracing
                 var attribs = new Dictionary<string, string>
                 {
                     { "type", "response" },
+                    { "url", httpContext.Request.RawUrl },
                     { "statusCode", httpContext.Response.StatusCode.ToString() },
                     { "statusText", httpContext.Response.StatusDescription }
                 };
