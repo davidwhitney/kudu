@@ -17,5 +17,18 @@ namespace Kudu.Core.Deployment
                                                                   String.Join(", ", solutions.Select(s => s.Path))));
             }
         }
+
+        public static void ThrowIfMultipleFound(this IEnumerable<string> projectPaths)
+        {
+            if (projectPaths.Count() > 1)
+            {
+                throw new InvalidOperationException(String.Format(CultureInfo.CurrentCulture, Resources.Error_AmbiguousProjects, String.Join(", ", projectPaths)));
+            }
+        }
+
+        public static bool IsConfigured(this string @string)
+        {
+            return !String.IsNullOrEmpty(@string);
+        }
     }
 }

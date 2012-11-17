@@ -11,7 +11,7 @@ namespace Kudu.Core.Deployment
 {
     public class SiteBuilderFactory : ISiteBuilderFactory
     {
-        private readonly DeploymentConfiguration _configuration;
+        private readonly DeploymentConfiguration _config;
         private readonly IDeploymentSettingsManager _settings;
         private readonly IEnvironment _environment;
         private readonly IBuildPropertyProvider _propertyProvider;
@@ -23,52 +23,39 @@ namespace Kudu.Core.Deployment
             _settings = settings;
             _propertyProvider = propertyProvider;
             _environment = environment;
-            _configuration = new DeploymentConfiguration(RepositoryRoot);
+            _config = new DeploymentConfiguration(RepositoryRoot);
         }
 
         public ISiteBuilder CreateBuilder(ITracer tracer, ILogger logger)
         {
-            var detectionRules = new Dictionary<ProjectConfigurationType, Func<bool>>
+            var artifactDetectionRules = new Dictionary<ProjectConfigurationType, Func<bool>>
                 {
-                    {ProjectConfigurationType.CustomDeploymentFile, ()=> !String.IsNullOrEmpty(_configuration.Command)},
-                    {ProjectConfigurationType.ExplicitPointerToProjectPath, ()=> !String.IsNullOrEmpty(_configuration.ProjectPath)},
-                    {ProjectConfigurationType.FindSingleVisualStudioSolutionFileRule,()=> FindFirstSolution() != null},
-                    {ProjectConfigurationType.FindFirstProjectFile, SingleLooseProjectFileDetected},
-                    {ProjectConfigurationType.NoBuildableFormatsDetected, ()=>true},
+                    {ProjectConfigurationType.CustomDeploymentCommandSpecified, ()=> _config.Command.IsConfigured()},
+                    {ProjectConfigurationType.ProjectPathSpecifiedInConfiguration, ()=> _config.ProjectPath.IsConfigured() && DeploymentHelper.IsProject(_config.ProjectPath)},
+                    {ProjectConfigurationType.SingleVsSolution,()=> FindFirstSolution() != null},
+                    {ProjectConfigurationType.SingleLooseProjectFile, CheckForLooseProjects},
+                    {ProjectConfigurationType.NoBuildableArtifactsDetected, ()=>true},
                 };
 
-            var detectedProjectType = detectionRules.Where(rule => rule.Value()).Select(rule => rule.Key).FirstOrDefault();
+            var detectedArtifactType = artifactDetectionRules.Where(rule => rule.Value()).Select(rule => rule.Key).FirstOrDefault();
 
-            var buildersForProjectTypes = new Dictionary<ProjectConfigurationType, Func<ISiteBuilder>>
+            var buildProcessMappings = new Dictionary<ProjectConfigurationType, Func<ISiteBuilder>>
                 {
-                    {ProjectConfigurationType.CustomDeploymentFile, () => new CustomBuilder(_environment.RepositoryPath, _environment.TempPath, _configuration.Command, _propertyProvider)},
-                    {ProjectConfigurationType.ExplicitPointerToProjectPath, ()=> ResolveProject(true, SearchOption.TopDirectoryOnly)},
-                    {ProjectConfigurationType.FindSingleVisualStudioSolutionFileRule, WebBuilder},
-                    {ProjectConfigurationType.FindFirstProjectFile,()=> ResolveProject()},
-                    {ProjectConfigurationType.NoBuildableFormatsDetected, () => new BasicBuilder(_environment.RepositoryPath, _environment.TempPath, _environment.ScriptPath)},
+                    {ProjectConfigurationType.CustomDeploymentCommandSpecified, () => new CustomBuilder(_environment.RepositoryPath, _environment.TempPath, _config.Command, _propertyProvider)},
+                    {ProjectConfigurationType.ProjectPathSpecifiedInConfiguration, DetermineDeployableProject},
+                    {ProjectConfigurationType.SingleVsSolution, WebBuilder},
+                    {ProjectConfigurationType.SingleLooseProjectFile,()=> ResolveProject()},
+                    {ProjectConfigurationType.NoBuildableArtifactsDetected, () => new BasicBuilder(_environment.RepositoryPath, _environment.TempPath, _environment.ScriptPath)},
                 };
 
 
-            return buildersForProjectTypes[detectedProjectType]();
+            return buildProcessMappings[detectedArtifactType]();
         }
 
-        private bool SingleLooseProjectFileDetected()
+        private bool CheckForLooseProjects()
         {
-            if (DeploymentHelper.IsProject(_configuration.ProjectPath))
-            {
-                return true;
-            }
-
-            // Check for loose projects
-            var projects = DeploymentHelper.GetProjects(_configuration.ProjectPath);
-            if (projects.Count > 1)
-            {
-                // Can't determine which project to build
-                throw new InvalidOperationException(String.Format(CultureInfo.CurrentCulture,
-                                                                  Resources.Error_AmbiguousProjects,
-                                                                  String.Join(", ", projects)));
-            }
-
+            var projects = DeploymentHelper.GetProjects(_config.ProjectPath);
+            projects.ThrowIfMultipleFound(); // Multiple loose projects not supported.
             return projects.Count == 1;
         }
 
@@ -114,18 +101,13 @@ namespace Kudu.Core.Deployment
 
         private ISiteBuilder ResolveProject(bool tryWebSiteProject = false, SearchOption searchOption = SearchOption.AllDirectories)
         {
-            if (DeploymentHelper.IsProject(_configuration.ProjectPath))
+            if (DeploymentHelper.IsProject(_config.ProjectPath))
             {
-                if (!DeploymentHelper.IsDeployableProject(_configuration.ProjectPath))
-                {
-                    throw new InvalidOperationException(String.Format(CultureInfo.CurrentCulture, Resources.Error_ProjectNotDeployable, _configuration.ProjectPath));
-                }
-
-                return DetermineProject(RepositoryRoot, _configuration.ProjectPath);
+                return DetermineDeployableProject();
             }
 
             // Check for loose projects
-            var projects = DeploymentHelper.GetProjects(_configuration.ProjectPath, searchOption);
+            var projects = DeploymentHelper.GetProjects(_config.ProjectPath, searchOption);
             if (projects.Count > 1)
             {
                 // Can't determine which project to build
@@ -146,7 +128,7 @@ namespace Kudu.Core.Deployment
             {
                 // Website projects need a solution to build so look for one in the repository path
                 // that has this website in it.
-                var solutions = VsHelper.FindContainingSolutions(RepositoryRoot, _configuration.ProjectPath);
+                var solutions = VsHelper.FindContainingSolutions(RepositoryRoot, _config.ProjectPath);
                 solutions.ThrowIfMultipleSolutionsFound();
 
                 if (solutions.Count == 1)
@@ -154,7 +136,7 @@ namespace Kudu.Core.Deployment
                     // Unambiguously pick the root
                     return new WebSiteBuilder(_propertyProvider,
                                               RepositoryRoot,
-                                              _configuration.ProjectPath,
+                                              _config.ProjectPath,
                                               _environment.TempPath,
                                               _environment.NuGetCachePath,
                                               solutions[0].Path);
@@ -162,7 +144,19 @@ namespace Kudu.Core.Deployment
             }
 
             // If there's none then use the basic builder (the site is xcopy deployable)
-            return new BasicBuilder(_configuration.ProjectPath, _environment.TempPath, _environment.ScriptPath);
+            return new BasicBuilder(_config.ProjectPath, _environment.TempPath, _environment.ScriptPath);
+        }
+
+        private ISiteBuilder DetermineDeployableProject()
+        {
+            if (!DeploymentHelper.IsDeployableProject(_config.ProjectPath))
+            {
+                throw new InvalidOperationException(String.Format(CultureInfo.CurrentCulture,
+                                                                  Resources.Error_ProjectNotDeployable,
+                                                                  _config.ProjectPath));
+            }
+
+            return DetermineProject(RepositoryRoot, _config.ProjectPath);
         }
 
 
@@ -187,11 +181,11 @@ namespace Kudu.Core.Deployment
 
         private enum ProjectConfigurationType
         {
-            CustomDeploymentFile,
-            ExplicitPointerToProjectPath,
-            FindSingleVisualStudioSolutionFileRule,
-            FindFirstProjectFile,
-            NoBuildableFormatsDetected,
+            CustomDeploymentCommandSpecified,
+            ProjectPathSpecifiedInConfiguration,
+            SingleVsSolution,
+            SingleLooseProjectFile,
+            NoBuildableArtifactsDetected,
         }
     }
 
