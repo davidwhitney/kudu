@@ -37,6 +37,7 @@ namespace Kudu.Core.Infrastructure
 
         private bool _isWap;
         private bool _isWebSite;
+        private bool _isNonWebProject;
         private IEnumerable<Guid> _projectTypeGuids;
         private string _projectName;
         private string _absolutePath;
@@ -88,6 +89,15 @@ namespace Kudu.Core.Infrastructure
             }
         }
 
+        public bool IsNonWebProject
+        {
+            get
+            {
+                EnsureProperties();
+                return _isNonWebProject;
+            }
+        }
+
         public VsSolutionProject(string solutionPath, object project)
         {
             _solutionPath = solutionPath;
@@ -105,6 +115,7 @@ namespace Kudu.Core.Infrastructure
             var projectType = _projectTypeProperty.GetValue<SolutionProjectType>(_projectInstance);
             var relativePath = _relativePathProperty.GetValue<string>(_projectInstance);
             _isWebSite = projectType == SolutionProjectType.WebProject;
+            _isNonWebProject = projectType == SolutionProjectType.NonWebProject;
 
             // When using websites with IISExpress, the relative path property becomes a URL.
             // When that happens we're going to grab the path from the Release.AspNetCompiler.PhysicalPath
@@ -153,6 +164,7 @@ namespace Kudu.Core.Infrastructure
             WebProject,
             WebDeploymentProject,
             EtpSubProject,
+            NonWebProject,
         }
     }
 }
